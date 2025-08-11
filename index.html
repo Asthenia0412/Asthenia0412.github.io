@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>皮卡堂账号估价计算器</title>
+    <style>
+        :root {
+            --primary-color: #6ecff6;
+            --secondary-color: #a8e6ff;
+            --accent-color: #ff9ec6;
+            --light-color: #f0f9ff;
+            --dark-color: #4a6fa5;
+            --success-color: #8bd8a1;
+            --warning-color: #ffd166;
+        }
+
+        body {
+            font-family: 'Comic Sans MS', 'Marker Felt', '微软雅黑', sans-serif;
+            background: linear-gradient(135deg, var(--light-color), var(--secondary-color));
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background-color: rgba(255, 255, 255, 0.8);
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+            border: 3px solid var(--primary-color);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .container::before {
+            content: "";
+            position: absolute;
+            top: -10px;
+            left: -10px;
+            right: -10px;
+            bottom: -10px;
+            background: linear-gradient(45deg, 
+                var(--primary-color), 
+                var(--accent-color), 
+                var(--secondary-color), 
+                var(--success-color));
+            z-index: -1;
+            filter: blur(20px);
+            opacity: 0.3;
+        }
+
+        h1 {
+            color: var(--dark-color);
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+            background: linear-gradient(to right, var(--accent-color), var(--primary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            padding-bottom: 10px;
+            border-bottom: 3px dotted var(--accent-color);
+        }
+
+        .section {
+            background-color: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+            border: 2px solid var(--secondary-color);
+        }
+
+        .section-title {
+            color: var(--dark-color);
+            font-size: 1.3em;
+            margin-top: 0;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px dashed var(--primary-color);
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: var(--dark-color);
+            font-weight: bold;
+        }
+
+        select, input {
+            width: 100%;
+            padding: 10px;
+            border-radius: 10px;
+            border: 2px solid var(--secondary-color);
+            font-family: inherit;
+            font-size: 16px;
+            background-color: var(--light-color);
+            transition: all 0.3s;
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(110, 207, 246, 0.3);
+        }
+
+        .radio-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        .radio-option {
+            display: flex;
+            align-items: center;
+        }
+
+        .radio-option input {
+            width: auto;
+            margin-right: 8px;
+        }
+
+        .property-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            background-color: var(--light-color);
+            padding: 10px;
+            border-radius: 10px;
+        }
+
+        .property-item label {
+            flex: 1;
+            margin-bottom: 0;
+        }
+
+        .property-item input {
+            width: 80px;
+            margin-left: 10px;
+            text-align: right;
+        }
+
+        .property-item .count {
+            width: 60px;
+            margin-right: 10px;
+        }
+
+        .result-section {
+            background-color: var(--success-color);
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            margin-top: 30px;
+            border: 2px solid #5cb881;
+        }
+
+        .result-title {
+            font-size: 1.5em;
+            color: white;
+            margin-top: 0;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .result-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: white;
+            margin: 15px 0;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .qq-group {
+            position: fixed;
+            right: 20px;
+            top: 20px;
+            background-color: var(--accent-color);
+            color: white;
+            padding: 15px;
+            border-radius: 15px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            max-width: 200px;
+            text-align: center;
+            border: 2px solid #ff7eb3;
+        }
+
+        .qq-group h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+
+        .qq-group p {
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+
+        .qq-number {
+            font-size: 1.2em;
+            font-weight: bold;
+            background-color: white;
+            color: var(--accent-color);
+            padding: 5px 10px;
+            border-radius: 8px;
+            display: inline-block;
+            margin: 5px 0;
+        }
+
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            font-size: 1.1em;
+            border-radius: 12px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+            transition: all 0.3s;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            display: block;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        button:hover {
+            background-color: var(--dark-color);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        @media (max-width: 768px) {
+            .qq-group {
+                position: static;
+                max-width: 100%;
+                margin-bottom: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>皮卡堂账号估价计算器</h1>
+        
+        <div class="qq-group">
+            <h3>交流反馈群</h3>
+            <p>迭代更新和数据错误</p>
+            <div class="qq-number">425053068</div>
+            <p>欢迎进群反馈</p>
+        </div>
+        
+        <div class="section">
+            <h2 class="section-title">1. 账号基本信息</h2>
+            
+            <div class="form-group">
+                <label for="channel">游戏渠道:</label>
+                <select id="channel">
+                    <option value="1">4399</option>
+                    <option value="1">7k7k</option>
+                    <option value="3">官网</option>
+                    <option value="1.5">腾讯</option>
+                    <option value="0.7">2144</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>账号状态:</label>
+                <div class="radio-group">
+                    <div class="radio-option">
+                        <input type="checkbox" id="registered">
+                        <label for="registered">有注册</label>
+                    </div>
+                    <div class="radio-option">
+                        <input type="checkbox" id="deadBind">
+                        <label for="deadBind">有死绑</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2 class="section-title">2. 财产估价</h2>
+            
+            <div class="property-item">
+                <label for="goldCard">金卡 (预设价格: 1.3元/个)</label>
+                <input type="number" id="goldCardCount" class="count" min="0" value="0">
+                <input type="number" id="goldCardPrice" min="0" step="0.1" value="1.3">
+            </div>
+            
+            <div class="property-item">
+                <label for="hundredBox">百元礼盒 (预设价格: 36元/个)</label>
+                <input type="number" id="hundredBoxCount" class="count" min="0" value="0">
+                <input type="number" id="hundredBoxPrice" min="0" step="0.1" value="36">
+            </div>
+            
+            <div class="property-item">
+                <label for="halfHundredBox">半百礼盒 (预设价格: 18元/个)</label>
+                <input type="number" id="halfHundredBoxCount" class="count" min="0" value="0">
+                <input type="number" id="halfHundredBoxPrice" min="0" step="0.1" value="18">
+            </div>
+            
+            <div class="property-item">
+                <label for="otherAssets">其他道具资产累计和</label>
+                <input type="number" id="otherAssetsCount" class="count" min="0" value="0">
+                <input type="number" id="otherAssetsPrice" min="0" step="0.1" value="0">
+            </div>
+            
+            <div class="property-item">
+                <label for="furniturePack">家具包累计和</label>
+                <input type="number" id="furniturePackCount" class="count" min="0" value="0">
+                <input type="number" id="furniturePackPrice" min="0" step="0.1" value="0">
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2 class="section-title">3. 头发估价</h2>
+            
+            <div class="property-item">
+                <label for="topHair">榜一头</label>
+                <input type="number" id="topHairCount" class="count" min="0" value="0">
+                <input type="number" id="topHairPrice" min="0" step="0.1" value="0">
+            </div>
+            
+            <div class="property-item">
+                <label for="giantHair">巨头</label>
+                <input type="number" id="giantHairCount" class="count" min="0" value="0">
+                <input type="number" id="giantHairPrice" min="0" step="0.1" value="0">
+            </div>
+            
+            <div class="property-item">
+                <label for="boxHair">百元-半百产出的头发</label>
+                <input type="number" id="boxHairCount" class="count" min="0" value="0">
+                <input type="number" id="boxHairPrice" min="0" step="0.1" value="0">
+            </div>
+            
+            <div class="property-item">
+                <label for="limitedHair">限购产出的头发</label>
+                <input type="number" id="limitedHairCount" class="count" min="0" value="0">
+                <input type="number" id="limitedHairPrice" min="0" step="0.1" value="0">
+            </div>
+            
+            <div class="property-item">
+                <label for="auctionHair">拍卖头</label>
+                <input type="number" id="auctionHairCount" class="count" min="0" value="0">
+                <input type="number" id="auctionHairPrice" min="0" step="0.1" value="0">
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2 class="section-title">4. 衣服估价</h2>
+            
+            <div class="property-item">
+                <label for="topClothes">榜一衣服</label>
+                <input type="number" id="topClothesCount" class="count" min="0" value="0">
+                <input type="number" id="topClothesPrice" min="0" step="0.1" value="0">
+            </div>
+            
+            <div class="property-item">
+                <label for="limitedClothes">限购衣服</label>
+                <input type="number" id="limitedClothesCount" class="count" min="0" value="0">
+                <input type="number" id="limitedClothesPrice" min="0" step="0.1" value="0">
+            </div>
+            
+            <div class="property-item">
+                <label for="boxClothes">百元-半百产出的衣服</label>
+                <input type="number" id="boxClothesCount" class="count" min="0" value="0">
+                <input type="number" id="boxClothesPrice" min="0" step="0.1" value="0">
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2 class="section-title">5. 声望估价</h2>
+            
+            <div class="property-item">
+                <label for="reputation">声望 (100声望=1元)</label>
+                <input type="number" id="reputationCount" class="count" min="0" value="0">
+                <input type="number" id="reputationPrice" min="0" step="0.1" value="0.01">
+            </div>
+        </div>
+        
+        <button id="calculateBtn">计算账号总价值</button>
+        
+        <div class="result-section" id="resultSection" style="display: none;">
+            <h2 class="result-title">账号估价结果</h2>
+            <div class="result-value" id="resultValue">0.00 元</div>
+            <p>此价格为估算价格，实际交易价格可能有所不同</p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('calculateBtn').addEventListener('click', function() {
+            // 获取渠道系数
+            const channelMultiplier = parseFloat(document.getElementById('channel').value);
+            
+            // 获取账号状态系数
+            let accountMultiplier = 1;
+            if (document.getElementById('registered').checked) {
+                accountMultiplier *= 0.7;
+            }
+            if (document.getElementById('deadBind').checked) {
+                accountMultiplier *= 0.5;
+            }
+            
+            // 计算财产部分
+            const goldCardValue = parseFloat(document.getElementById('goldCardCount').value) * parseFloat(document.getElementById('goldCardPrice').value);
+            const hundredBoxValue = parseFloat(document.getElementById('hundredBoxCount').value) * parseFloat(document.getElementById('hundredBoxPrice').value);
+            const halfHundredBoxValue = parseFloat(document.getElementById('halfHundredBoxCount').value) * parseFloat(document.getElementById('halfHundredBoxPrice').value);
+            const otherAssetsValue = parseFloat(document.getElementById('otherAssetsCount').value) * parseFloat(document.getElementById('otherAssetsPrice').value);
+            const furniturePackValue = parseFloat(document.getElementById('furniturePackCount').value) * parseFloat(document.getElementById('furniturePackPrice').value);
+            
+            // 计算头发部分
+            const topHairValue = parseFloat(document.getElementById('topHairCount').value) * parseFloat(document.getElementById('topHairPrice').value);
+            const giantHairValue = parseFloat(document.getElementById('giantHairCount').value) * parseFloat(document.getElementById('giantHairPrice').value);
+            const boxHairValue = parseFloat(document.getElementById('boxHairCount').value) * parseFloat(document.getElementById('boxHairPrice').value);
+            const limitedHairValue = parseFloat(document.getElementById('limitedHairCount').value) * parseFloat(document.getElementById('limitedHairPrice').value);
+            const auctionHairValue = parseFloat(document.getElementById('auctionHairCount').value) * parseFloat(document.getElementById('auctionHairPrice').value);
+            
+            // 计算衣服部分
+            const topClothesValue = parseFloat(document.getElementById('topClothesCount').value) * parseFloat(document.getElementById('topClothesPrice').value);
+            const limitedClothesValue = parseFloat(document.getElementById('limitedClothesCount').value) * parseFloat(document.getElementById('limitedClothesPrice').value);
+            const boxClothesValue = parseFloat(document.getElementById('boxClothesCount').value) * parseFloat(document.getElementById('boxClothesPrice').value);
+            
+            // 计算声望部分
+            const reputationValue = parseFloat(document.getElementById('reputationCount').value) * parseFloat(document.getElementById('reputationPrice').value);
+            
+            // 计算总和
+            let totalValue = goldCardValue + hundredBoxValue + halfHundredBoxValue + otherAssetsValue + furniturePackValue +
+                            topHairValue + giantHairValue + boxHairValue + limitedHairValue + auctionHairValue +
+                            topClothesValue + limitedClothesValue + boxClothesValue + reputationValue;
+            
+            // 应用渠道和账号状态系数
+            totalValue = totalValue * channelMultiplier * accountMultiplier;
+            
+            // 显示结果
+            document.getElementById('resultValue').textContent = totalValue.toFixed(2) + ' 元';
+            document.getElementById('resultSection').style.display = 'block';
+            
+            // 滚动到结果
+            document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
+        });
+    </script>
+</body>
+</html>
