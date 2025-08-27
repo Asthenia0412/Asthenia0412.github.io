@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html data-color-mode="light" data-dark-theme="dark" data-light-theme="light" lang="zh-CN">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link href='https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/Primer/21.0.7/primer.css' rel='stylesheet' />
+    
+    <link rel="icon" href="https://github.githubassets.com/favicons/favicon.svg"><script>
+        let theme = localStorage.getItem("meek_theme") || "light";
+        document.documentElement.setAttribute("data-color-mode", theme);
+    </script>
+<meta name="description" content="# 我的Spring声明式事务探索：常见参数与七种传播级别的记忆方式
+
+最近在项目中频繁使用Spring的声明式事务，觉得有必要梳理一下它的核心内容。">
+<meta property="og:title" content="声明式事务的常见参数与七种事务传播级别的记忆方法">
+<meta property="og:description" content="# 我的Spring声明式事务探索：常见参数与七种传播级别的记忆方式
+
+最近在项目中频繁使用Spring的声明式事务，觉得有必要梳理一下它的核心内容。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://Asthenia0412.github.io/post/sheng-ming-shi-shi-wu-de-chang-jian-can-shu-yu-qi-zhong-shi-wu-chuan-bo-ji-bie-de-ji-yi-fang-fa.html">
+<meta property="og:image" content="https://github.githubassets.com/favicons/favicon.svg">
+<title>声明式事务的常见参数与七种事务传播级别的记忆方法</title>
+
+
+
+</head>
+<style>
+body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;padding: 45px;font-size: 16px;font-family: sans-serif;line-height: 1.25;}
+#header{display:flex;padding-bottom:8px;border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));margin-bottom: 16px;}
+#footer {margin-top:64px; text-align: center;font-size: small;}
+
+</style>
+
+<style>
+.postTitle{margin: auto 0;font-size:40px;font-weight:bold;}
+.title-right{display:flex;margin:auto 0 0 auto;}
+.title-right .circle{padding: 14px 16px;margin-right:8px;}
+#postBody{border-bottom: 1px solid var(--color-border-default);padding-bottom:36px;}
+#postBody hr{height:2px;}
+#cmButton{height:48px;margin-top:48px;}
+#comments{margin-top:64px;}
+.g-emoji{font-size:24px;}
+@media (max-width: 600px) {
+    body {padding: 8px;}
+    .postTitle{font-size:24px;}
+}
+
+</style>
+
+
+
+
+<body>
+    <div id="header">
+<h1 class="postTitle">声明式事务的常见参数与七种事务传播级别的记忆方法</h1>
+<div class="title-right">
+    <a href="https://Asthenia0412.github.io" id="buttonHome" class="btn btn-invisible circle" title="首页">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathHome" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+    <a href="https://github.com/Asthenia0412/Asthenia0412.github.io/issues/11" target="_blank" class="btn btn-invisible circle" title="Issue">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathIssue" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+
+    <a class="btn btn-invisible circle" onclick="modeSwitch();" title="切换主题">
+        <svg class="octicon" width="16" height="16" >
+            <path id="themeSwitch" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+
+</div>
+</div>
+    <div id="content">
+<div class="markdown-body" id="postBody"><h1>我的Spring声明式事务探索：常见参数与七种传播级别的记忆方式</h1>
+<p>最近在项目中频繁使用Spring的声明式事务，觉得有必要梳理一下它的核心内容。声明式事务通过注解或XML配置让事务管理变得简单，但其中的参数和传播级别总让人有点晕。这篇文章我将分享自己对Spring声明式事务常见参数的理解，以及如何记住那七种事务传播级别。</p>
+<h2>Spring声明式事务的常见参数</h2>
+<p>Spring的声明式事务主要通过<code class="notranslate">@Transactional</code>注解来实现，注解里可以配置一些参数来控制事务的行为。以下是我总结的几个常用参数，结合实际使用的感受来聊聊它们的作用：</p>
+<ol>
+<li>
+<p><strong>propagation（传播行为）</strong><br>
+这是定义事务如何在方法调用链中传播的参数。Spring提供了七种传播行为（后面会详细讲），默认是<code class="notranslate">Propagation.REQUIRED</code>。我一般会根据业务场景选择，比如嵌套方法调用时可能会用到<code class="notranslate">NESTED</code>或<code class="notranslate">REQUIRES_NEW</code>。</p>
+</li>
+<li>
+<p><strong>isolation（隔离级别）</strong><br>
+隔离级别决定了事务在并发时如何处理数据一致性问题。Spring支持的隔离级别包括：</p>
+<ul>
+<li><code class="notranslate">DEFAULT</code>：使用数据库的默认隔离级别（我常用这个，省心）。</li>
+<li><code class="notranslate">READ_UNCOMMITTED</code>：允许读未提交数据，性能高但可能有脏读。</li>
+<li><code class="notranslate">READ_COMMITTED</code>：只读已提交数据，防止脏读，但可能有不可重复读。</li>
+<li><code class="notranslate">REPEATABLE_READ</code>：保证同一事务内多次读取数据一致，防止不可重复读，但可能有幻读。</li>
+<li><code class="notranslate">SERIALIZABLE</code>：最高隔离级别，事务串行执行，性能最低但最安全。<br>
+我在项目中一般用<code class="notranslate">DEFAULT</code>或<code class="notranslate">READ_COMMITTED</code>，因为数据库（如MySQL的InnoDB）默认隔离级别已经能满足大部分需求。</li>
+</ul>
+</li>
+<li>
+<p><strong>timeout（超时时间）</strong><br>
+这个参数设置事务的超时时间（秒）。如果事务执行时间超了，Spring会抛出异常并回滚。默认是-1，意味着不设置超时，依赖数据库的配置。我在处理大数据量操作时会设置一个合理的超时，比如<code class="notranslate">timeout=30</code>，避免事务挂起太久。</p>
+</li>
+<li>
+<p><strong>readOnly（只读事务）</strong><br>
+设置为<code class="notranslate">readOnly=true</code>时，事务只允许读操作，不能修改数据。Spring会优化只读事务的性能，比如禁用脏数据检查。我在报表查询这种只读场景下会用这个参数，能稍微提高点效率。</p>
+</li>
+<li>
+<p><strong>rollbackFor/noRollbackFor</strong></p>
+<ul>
+<li><code class="notranslate">rollbackFor</code>：指定哪些异常触发回滚，默认是<code class="notranslate">RuntimeException</code>和<code class="notranslate">Error</code>。如果业务中有自定义的检查型异常需要回滚，可以在这里指定，比如<code class="notranslate">rollbackFor = MyCustomException.class</code>。</li>
+<li><code class="notranslate">noRollbackFor</code>：指定哪些异常不触发回滚。<br>
+我踩过一个坑：默认情况下，检查型异常（<code class="notranslate">Exception</code>）不会触发回滚，所以得显式配置<code class="notranslate">rollbackFor</code>。</li>
+</ul>
+</li>
+</ol>
+<p>这些参数在实际开发中挺实用，尤其是<code class="notranslate">propagation</code>和<code class="notranslate">isolation</code>，直接影响事务的行为。至于<code class="notranslate">timeout</code>和<code class="notranslate">readOnly</code>，我一般按需调整，<code class="notranslate">rollbackFor</code>则是救命稻草，避免默认回滚规则不满足需求。</p>
+<h2>七种事务传播级别的记忆方式</h2>
+<p>Spring的事务传播级别（Propagation）有七种，分别是<code class="notranslate">REQUIRED</code>、<code class="notranslate">SUPPORTS</code>、<code class="notranslate">MANDATORY</code>、<code class="notranslate">REQUIRES_NEW</code>、<code class="notranslate">NOT_SUPPORTED</code>、<code class="notranslate">NEVER</code>和<code class="notranslate">NESTED</code>。刚开始记这些的时候，我总觉得脑子不够用，后来总结了一个场景化的记忆方式，结合实际开发中的调用关系来理解，效果还不错。</p>
+<h3>记忆方式：用“饭店点餐”场景类比</h3>
+<p>我把事务传播级别想象成去饭店点餐，方法调用就像顾客和服务员的交互，事务就像点餐的订单。以下是我怎么用这个场景记住七种传播级别的：</p>
+<ol>
+<li>
+<p><strong>REQUIRED（默认，必须有订单）</strong></p>
+<ul>
+<li><strong>场景</strong>：我走进饭店点菜，如果已经有一桌（外层事务），我就加入这桌一起点菜；如果没有，我就开一桌（新事务）。</li>
+<li><strong>代码</strong>：如果当前有事务，就加入；没有就新建事务。</li>
+<li><strong>记忆</strong>：REQUIRED就像“必须有订单”，不管有没有现成的，我都要吃上饭。</li>
+</ul>
+</li>
+<li>
+<p><strong>SUPPORTS（支持现有订单）</strong></p>
+<ul>
+<li><strong>场景</strong>：我去饭店，如果有桌（外层事务），我就加入点菜；如果没桌，我就不开新桌，直接吃便当（无事务）。</li>
+<li><strong>代码</strong>：如果有事务就加入，没事务就以非事务方式运行。</li>
+<li><strong>记忆</strong>：SUPPORTS是“随大流”，有订单就加入，没订单我也能凑合。</li>
+</ul>
+</li>
+<li>
+<p><strong>MANDATORY（强制要订单）</strong></p>
+<ul>
+<li><strong>场景</strong>：我去饭店，必须加入现有的一桌（外层事务），如果没桌，我就生气走人（抛异常）。</li>
+<li><strong>代码</strong>：必须有外层事务，否则抛<code class="notranslate">IllegalTransactionStateException</code>。</li>
+<li><strong>记忆</strong>：MANDATORY是“强制要订单”，没订单我就不干了。</li>
+</ul>
+</li>
+<li>
+<p><strong>REQUIRES_NEW（必须新订单）</strong></p>
+<ul>
+<li><strong>场景</strong>：我去饭店，不管有没有桌，我都要单独开一桌（新事务），原来的桌跟我无关。</li>
+<li><strong>代码</strong>：总是新建一个事务，暂停外层事务。</li>
+<li><strong>记忆</strong>：REQUIRES_NEW是“必须新订单”，我就是要独占一桌。</li>
+</ul>
+</li>
+<li>
+<p><strong>NOT_SUPPORTED（不支持订单）</strong></p>
+<ul>
+<li><strong>场景</strong>：我去饭店不想跟别人拼桌（外层事务），有桌我就先把桌清空（暂停事务），然后自己吃便当（非事务）。</li>
+<li><strong>代码</strong>：如果有事务就暂停，以非事务方式运行。</li>
+<li><strong>记忆</strong>：NOT_SUPPORTED是“不支持订单”，我自带干粮，不跟你们玩。</li>
+</ul>
+</li>
+<li>
+<p><strong>NEVER（从不接受订单）</strong></p>
+<ul>
+<li><strong>场景</strong>：我去饭店，如果有桌（外层事务），我扭头就走（抛异常）；没桌我就安心吃便当（非事务）。</li>
+<li><strong>代码</strong>：如果有事务就抛<code class="notranslate">IllegalTransactionStateException</code>，否则以非事务方式运行。</li>
+<li><strong>记忆</strong>：NEVER是“从不点餐”，有订单我就不干了。</li>
+</ul>
+</li>
+<li>
+<p><strong>NESTED（嵌套订单）</strong></p>
+<ul>
+<li><strong>场景</strong>：我在饭店点菜，加入现有的一桌（外层事务），但我的菜是单独一份账单（嵌套事务）。如果我这桌菜有问题，只取消我的菜，别人不受影响。</li>
+<li><strong>代码</strong>：在当前事务中嵌套一个子事务，子事务可以独立提交或回滚（通过保存点实现）。</li>
+<li><strong>记忆</strong>：NESTED是“嵌套订单”，我点菜但有自己的小账本。</li>
+</ul>
+</li>
+</ol>
+<h3>小技巧：分类记忆</h3>
+<p>为了更方便记忆，我把这七种传播级别分成三类：</p>
+<ul>
+<li><strong>必须有事务</strong>：<code class="notranslate">REQUIRED</code>、<code class="notranslate">MANDATORY</code>、<code class="notranslate">NESTED</code>（都要求有事务环境，但处理方式不同）。</li>
+<li><strong>不需要事务</strong>：<code class="notranslate">SUPPORTS</code>、<code class="notranslate">NOT_SUPPORTED</code>、<code class="notranslate">NEVER</code>（可以无事务运行，但对现有事务的态度不同）。</li>
+<li><strong>独立事务</strong>：<code class="notranslate">REQUIRES_NEW</code>（总是要新的独立事务）。</li>
+</ul>
+<p>用这个“饭店点餐”的场景，我基本能把七种传播级别记牢。实际开发中，<code class="notranslate">REQUIRED</code>和<code class="notranslate">REQUIRES_NEW</code>用得最多，<code class="notranslate">NESTED</code>在复杂业务中偶尔会用，其他几种相对少见。</p>
+<h2>总结</h2></div>
+<div style="font-size:small;margin-top:8px;float:right;"></div>
+
+<button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
+<div class="comments" id="comments"></div>
+
+</div>
+    <div id="footer"><div id="footer1">Copyright © <span id="copyrightYear"></span> <a href="https://Asthenia0412.github.io">Asthenia的随笔</a></div>
+<div id="footer2">
+    <span id="runday"></span><span>Powered by <a href="https://meekdai.com/Gmeek.html" target="_blank">Gmeek</a></span>
+</div>
+
+<script>
+var now=new Date();
+document.getElementById("copyrightYear").innerHTML=now.getFullYear();
+
+if(""!=""){
+    var startSite=new Date("");
+    var diff=now.getTime()-startSite.getTime();
+    var diffDay=Math.floor(diff/(1000*60*60*24));
+    document.getElementById("runday").innerHTML="网站运行"+diffDay+"天"+" • ";
+}
+</script></div>
+</body>
+<script>
+var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z'};
+var utterancesLoad=0;
+
+let themeSettings={
+    "dark": ["dark","moon","#00f0ff","dark-blue"],
+    "light": ["light","sun","#ff5000","github-light"],
+    "auto": ["auto","sync","","preferred-color-scheme"]
+};
+function changeTheme(mode, icon, color, utheme){
+    document.documentElement.setAttribute("data-color-mode",mode);
+    document.getElementById("themeSwitch").setAttribute("d",value=IconList[icon]);
+    document.getElementById("themeSwitch").parentNode.style.color=color;
+    if(utterancesLoad==1){utterancesTheme(utheme);}
+}
+function modeSwitch(){
+    let currentMode=document.documentElement.getAttribute('data-color-mode');
+    let newMode = currentMode === "light" ? "dark" : currentMode === "dark" ? "auto" : "light";
+    localStorage.setItem("meek_theme", newMode);
+    if(themeSettings[newMode]){
+        changeTheme(...themeSettings[newMode]);
+    }
+}
+function utterancesTheme(theme){
+    const message={type:'set-theme',theme: theme};
+    const iframe=document.getElementsByClassName('utterances-frame')[0];
+    iframe.contentWindow.postMessage(message,'https://utteranc.es');
+}
+if(themeSettings[theme]){changeTheme(...themeSettings[theme]);}
+console.log("\n %c Gmeek last https://github.com/Meekdai/Gmeek \n","padding:5px 0;background:#02d81d;color:#fff");
+</script>
+
+<script>
+document.getElementById("pathHome").setAttribute("d",IconList["home"]);
+document.getElementById("pathIssue").setAttribute("d",IconList["github"]);
+
+
+
+function openComments(){
+    cm=document.getElementById("comments");
+    cmButton=document.getElementById("cmButton");
+    cmButton.innerHTML="loading";
+    span=document.createElement("span");
+    span.setAttribute("class","AnimatedEllipsis");
+    cmButton.appendChild(span);
+
+    script=document.createElement("script");
+    script.setAttribute("src","https://utteranc.es/client.js");
+    script.setAttribute("repo","Asthenia0412/Asthenia0412.github.io");
+    script.setAttribute("issue-term","title");
+    
+    if(localStorage.getItem("meek_theme")=="dark"){script.setAttribute("theme","dark-blue");}
+    else if(localStorage.getItem("meek_theme")=="light") {script.setAttribute("theme","github-light");}
+    else{script.setAttribute("theme","preferred-color-scheme");}
+    
+    script.setAttribute("crossorigin","anonymous");
+    script.setAttribute("async","");
+    cm.appendChild(script);
+
+    int=self.setInterval("iFrameLoading()",200);
+}
+
+function iFrameLoading(){
+    var utterances=document.getElementsByClassName('utterances');
+    if(utterances.length==1){
+        if(utterances[0].style.height!=""){
+            utterancesLoad=1;
+            int=window.clearInterval(int);
+            document.getElementById("cmButton").style.display="none";
+            console.log("utterances Load OK");
+        }
+    }
+}
+
+
+
+</script>
+
+
+</html>
