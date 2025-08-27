@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html data-color-mode="light" data-dark-theme="dark" data-light-theme="light" lang="zh-CN">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link href='https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/Primer/21.0.7/primer.css' rel='stylesheet' />
+    
+    <link rel="icon" href="https://github.githubassets.com/favicons/favicon.svg"><script>
+        let theme = localStorage.getItem("meek_theme") || "light";
+        document.documentElement.setAttribute("data-color-mode", theme);
+    </script>
+<meta name="description" content="### 锁的物理面纱：它究竟是如何“锁”在数据上的？
+
+最近在深入学习数据库的锁机制，搞懂了表锁、行锁、显式锁、隐式锁以及锁释放的时机等概念。">
+<meta property="og:title" content="锁的物理面纱：它究竟是如何“锁”在数据上的？">
+<meta property="og:description" content="### 锁的物理面纱：它究竟是如何“锁”在数据上的？
+
+最近在深入学习数据库的锁机制，搞懂了表锁、行锁、显式锁、隐式锁以及锁释放的时机等概念。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://Asthenia0412.github.io/post/suo-de-wu-li-mian-sha-%EF%BC%9A-ta-jiu-jing-shi-ru-he-%E2%80%9C-suo-%E2%80%9D-zai-shu-ju-shang-de-%EF%BC%9F.html">
+<meta property="og:image" content="https://github.githubassets.com/favicons/favicon.svg">
+<title>锁的物理面纱：它究竟是如何“锁”在数据上的？</title>
+
+
+
+</head>
+<style>
+body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;padding: 45px;font-size: 16px;font-family: sans-serif;line-height: 1.25;}
+#header{display:flex;padding-bottom:8px;border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));margin-bottom: 16px;}
+#footer {margin-top:64px; text-align: center;font-size: small;}
+
+</style>
+
+<style>
+.postTitle{margin: auto 0;font-size:40px;font-weight:bold;}
+.title-right{display:flex;margin:auto 0 0 auto;}
+.title-right .circle{padding: 14px 16px;margin-right:8px;}
+#postBody{border-bottom: 1px solid var(--color-border-default);padding-bottom:36px;}
+#postBody hr{height:2px;}
+#cmButton{height:48px;margin-top:48px;}
+#comments{margin-top:64px;}
+.g-emoji{font-size:24px;}
+@media (max-width: 600px) {
+    body {padding: 8px;}
+    .postTitle{font-size:24px;}
+}
+
+</style>
+
+
+
+
+<body>
+    <div id="header">
+<h1 class="postTitle">锁的物理面纱：它究竟是如何“锁”在数据上的？</h1>
+<div class="title-right">
+    <a href="https://Asthenia0412.github.io" id="buttonHome" class="btn btn-invisible circle" title="首页">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathHome" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+    <a href="https://github.com/Asthenia0412/Asthenia0412.github.io/issues/4" target="_blank" class="btn btn-invisible circle" title="Issue">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathIssue" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+
+    <a class="btn btn-invisible circle" onclick="modeSwitch();" title="切换主题">
+        <svg class="octicon" width="16" height="16" >
+            <path id="themeSwitch" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+
+</div>
+</div>
+    <div id="content">
+<div class="markdown-body" id="postBody"><h3>锁的物理面纱：它究竟是如何“锁”在数据上的？</h3>
+<p>最近在深入学习数据库的锁机制，搞懂了表锁、行锁、显式锁、隐式锁以及锁释放的时机等概念。但有一个问题一直萦绕在我心头，从理论落到实现，总感觉隔着一层纱：<strong>锁这个东西，在物理层面到底是怎么实现的？</strong></p>
+<p>我尤其经常听到一种说法：“<strong>如果索引失效，行锁就失效了</strong>”。这让我非常困惑：锁和索引之间到底是一种怎样的共生关系？难道所有的锁都建立在索引之上吗？如果索引是一棵B+树，那这把锁具体是锁在了树的哪个部分？是锁住了某个节点，还是某条记录？</p>
+<p>今天，我就打算以第一视角，把我研究探索的过程和得到的答案整理出来，尝试揭开这层物理面纱。</p>
+<h4>一、锁的本质：内存中的“交通管制中心”</h4>
+<p>首先，我得抛开“锁”这个字带来的物理错觉。它并不是像自行车锁一样，有个实物挂在数据行上。它的真实形态是一个<strong>纯粹的内存数据结构</strong>，你可以把它想象成一个繁忙机场的<strong>空中交通管制中心（ATC）</strong>。</p>
+<p>这个“管制中心”的核心是一张<strong>全局哈希表（Lock Table）</strong>。每当一个事务（好比一架飞机）想要访问或修改一条记录（好比使用一条跑道）时，它就需要向ATC申请“许可”。</p>
+<ol>
+<li><strong>申请流程</strong>：事务会提供目标数据的唯一标识（比如行ID或索引键值）。系统用这个标识计算一个哈希值，快速定位到哈希表中的某个“柜台”。</li>
+<li><strong>冲突检测</strong>：这个柜台管理着对同一条数据的所有申请。系统会检查：
+<ul>
+<li>如果柜台没人（没有已存在的锁对象），就为我创建一个“许可”（锁对象），关联到我的事务，申请成功。</li>
+<li>如果柜台有人（已有锁对象），就看我的请求和现有的许可是否兼容（比如，大家都只是读，那就共享）。兼容就一起用，不兼容我就得去排队（进入等待队列）。</li>
+</ul>
+</li>
+</ol>
+<p>所以，<strong>锁的物理实现，就是一个高效的内存中哈希表+链表结构</strong>，用于协调所有事务对共享资源的访问顺序。它和磁盘上的数据文件是分开的。</p>
+<h4>二、索引与行锁：导航员与精确制导</h4>
+<p>现在来解决我最核心的困惑：索引和锁的关系。</p>
+<p><strong>并非所有的锁都依赖于索引</strong>。表锁、页锁这些粗粒度锁和管理层级的锁（如意向锁）就不依赖。但是，<strong>高效、精确的行级锁，绝对依赖于索引</strong>。</p>
+<p>为什么？想象一下这个场景：我想<code class="notranslate">UPDATE</code>表里<code class="notranslate">age=25</code>的所有行。</p>
+<ul>
+<li><strong>有索引时</strong>：<code class="notranslate">age</code>字段上的索引就像一个高效的<strong>导航员</strong>。它直接带我沿着B+树找到所有<code class="notranslate">age=25</code>的叶子节点。我只需要<strong>精准地对这些找到的记录</strong>在“管制中心”（锁表）里申请加锁即可。这叫<strong>行级锁</strong>，精度高，并发性好。</li>
+<li><strong>无索引时</strong>：导航员罢工了。我没办法，只能进行“地毯式搜索”（全表扫描）。为了避免漏掉任何可能<code class="notranslate">age=25</code>的行（为了保证事务隔离性），我在扫描过程中，<strong>无法判断哪行最终符合条件，只能“先锁住，再判断”</strong>。这个过程可能导致我锁住了表中绝大部分甚至所有的行。</li>
+</ul>
+<p>所以，<strong>“索引失效，锁就失效”这个说法并不准确，但非常形象</strong>。它真正的意思是：<strong>索引失效导致行锁无法实现，数据库为了安全，退而求其次使用了锁住大量行的方案（近似表锁），使得行级锁精细控制的并发优势“失效”了</strong>。这不是锁本身的功能失效，而是锁的粒度被迫扩大，性能退化了。</p>
+<h4>三、锁如何“挂”在索引树上？</h4>
+<p>最后，来看看锁具体是怎么和B+树索引结合的。我的理解是，锁并不是锁“树”，而是锁树上挂着的“果子”（记录）。</p>
+<p>以我理解的复合索引 <code class="notranslate">(a, b, c)</code>为例。当我执行 <code class="notranslate">SELECT ... WHERE a=10 AND b=20 FOR UPDATE</code>时：</p>
+<ol>
+<li><strong>导航</strong>：数据库利用这棵复合索引B+树，快速查找到满足<code class="notranslate">a=10, b=20</code>的第一条索引记录。这个记录就存储在叶子节点上。</li>
+<li><strong>加锁</strong>：<strong>锁就直接加在这条索引记录本身上</strong>。在InnoDB中，行锁实际上是附加在索引记录上的。锁表中的那个“资源标识符”，指向的就是这个索引条目（可能是键值本身，或是其哈希值，或一个唯一指针）。</li>
+<li><strong>回溯</strong>：如果这个索引是二级索引，叶子节点只存了主键值，那么数据库还会拿这个主键值回到主键索引（聚集索引）中找到完整的行数据，并<strong>同样在主键索引的对应记录上再加一把锁</strong>。</li>
+<li><strong>范围控制（Next-Key Lock）</strong>：为了绝对防止幻读，InnoDB默认不仅锁住我找到的那条记录，还会锁住它之前的“间隙”（Gap）。这把“间隙锁”也是挂在索引记录上的，它锁住了一个区间，防止其他事务在这个区间内插入新记录。</li>
+</ol>
+<p><strong>所以说，锁是直接“标记”在索引记录的条目上的。</strong> 数据库通过索引快速定位到目标记录，然后在内存的锁表里，对这条记录的唯一标识进行占用和排队管理。</p>
+<h4>我的总结</h4>
+<p>通过这番探究，我心中的谜团终于解开了：</p>
+<ul>
+<li><strong>锁是内存里的数据结构</strong>，是一个负责协调的“交通管制中心”（锁表）。</li>
+<li><strong>索引是行级锁的“导航系统”</strong>。没有它，数据库无法精确定位，行锁就会退化成低效的表级锁，导致并发性能“失效”。</li>
+<li><strong>锁加在索引记录的“入口”上</strong>。无论是二级索引还是主键索引，锁最终都是附着在具体的索引条目上，并通过Next-Key Lock机制保护记录周围的间隙。</li>
+</ul>
+<p>这一切的设计，都体现了数据库系统在保证数据一致性的前提下，对性能和不必要锁定范围极致的追求。希望我的这份思考笔记，也能帮到有同样疑问的你。</p></div>
+<div style="font-size:small;margin-top:8px;float:right;"></div>
+
+<button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
+<div class="comments" id="comments"></div>
+
+</div>
+    <div id="footer"><div id="footer1">Copyright © <span id="copyrightYear"></span> <a href="https://Asthenia0412.github.io">Asthenia的随笔</a></div>
+<div id="footer2">
+    <span id="runday"></span><span>Powered by <a href="https://meekdai.com/Gmeek.html" target="_blank">Gmeek</a></span>
+</div>
+
+<script>
+var now=new Date();
+document.getElementById("copyrightYear").innerHTML=now.getFullYear();
+
+if(""!=""){
+    var startSite=new Date("");
+    var diff=now.getTime()-startSite.getTime();
+    var diffDay=Math.floor(diff/(1000*60*60*24));
+    document.getElementById("runday").innerHTML="网站运行"+diffDay+"天"+" • ";
+}
+</script></div>
+</body>
+<script>
+var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z'};
+var utterancesLoad=0;
+
+let themeSettings={
+    "dark": ["dark","moon","#00f0ff","dark-blue"],
+    "light": ["light","sun","#ff5000","github-light"],
+    "auto": ["auto","sync","","preferred-color-scheme"]
+};
+function changeTheme(mode, icon, color, utheme){
+    document.documentElement.setAttribute("data-color-mode",mode);
+    document.getElementById("themeSwitch").setAttribute("d",value=IconList[icon]);
+    document.getElementById("themeSwitch").parentNode.style.color=color;
+    if(utterancesLoad==1){utterancesTheme(utheme);}
+}
+function modeSwitch(){
+    let currentMode=document.documentElement.getAttribute('data-color-mode');
+    let newMode = currentMode === "light" ? "dark" : currentMode === "dark" ? "auto" : "light";
+    localStorage.setItem("meek_theme", newMode);
+    if(themeSettings[newMode]){
+        changeTheme(...themeSettings[newMode]);
+    }
+}
+function utterancesTheme(theme){
+    const message={type:'set-theme',theme: theme};
+    const iframe=document.getElementsByClassName('utterances-frame')[0];
+    iframe.contentWindow.postMessage(message,'https://utteranc.es');
+}
+if(themeSettings[theme]){changeTheme(...themeSettings[theme]);}
+console.log("\n %c Gmeek last https://github.com/Meekdai/Gmeek \n","padding:5px 0;background:#02d81d;color:#fff");
+</script>
+
+<script>
+document.getElementById("pathHome").setAttribute("d",IconList["home"]);
+document.getElementById("pathIssue").setAttribute("d",IconList["github"]);
+
+
+
+function openComments(){
+    cm=document.getElementById("comments");
+    cmButton=document.getElementById("cmButton");
+    cmButton.innerHTML="loading";
+    span=document.createElement("span");
+    span.setAttribute("class","AnimatedEllipsis");
+    cmButton.appendChild(span);
+
+    script=document.createElement("script");
+    script.setAttribute("src","https://utteranc.es/client.js");
+    script.setAttribute("repo","Asthenia0412/Asthenia0412.github.io");
+    script.setAttribute("issue-term","title");
+    
+    if(localStorage.getItem("meek_theme")=="dark"){script.setAttribute("theme","dark-blue");}
+    else if(localStorage.getItem("meek_theme")=="light") {script.setAttribute("theme","github-light");}
+    else{script.setAttribute("theme","preferred-color-scheme");}
+    
+    script.setAttribute("crossorigin","anonymous");
+    script.setAttribute("async","");
+    cm.appendChild(script);
+
+    int=self.setInterval("iFrameLoading()",200);
+}
+
+function iFrameLoading(){
+    var utterances=document.getElementsByClassName('utterances');
+    if(utterances.length==1){
+        if(utterances[0].style.height!=""){
+            utterancesLoad=1;
+            int=window.clearInterval(int);
+            document.getElementById("cmButton").style.display="none";
+            console.log("utterances Load OK");
+        }
+    }
+}
+
+
+
+</script>
+
+
+</html>
