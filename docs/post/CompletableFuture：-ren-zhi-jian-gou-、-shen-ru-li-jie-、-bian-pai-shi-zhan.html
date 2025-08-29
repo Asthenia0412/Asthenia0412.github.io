@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html data-color-mode="light" data-dark-theme="dark" data-light-theme="light" lang="zh-CN">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link href='https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/Primer/21.0.7/primer.css' rel='stylesheet' />
+    
+    <link rel="icon" href="https://github.githubassets.com/favicons/favicon.svg"><script>
+        let theme = localStorage.getItem("meek_theme") || "light";
+        document.documentElement.setAttribute("data-color-mode", theme);
+    </script>
+<meta name="description" content="
+
+最近在项目中频繁使用 `CompletableFuture` 来处理异步任务，相比传统的 `Future`，它在灵活性和功能上确实强大很多。">
+<meta property="og:title" content="CompletableFuture：认知建构、深入理解、编排实战">
+<meta property="og:description" content="
+
+最近在项目中频繁使用 `CompletableFuture` 来处理异步任务，相比传统的 `Future`，它在灵活性和功能上确实强大很多。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://Asthenia0412.github.io/post/CompletableFuture%EF%BC%9A-ren-zhi-jian-gou-%E3%80%81-shen-ru-li-jie-%E3%80%81-bian-pai-shi-zhan.html">
+<meta property="og:image" content="https://github.githubassets.com/favicons/favicon.svg">
+<title>CompletableFuture：认知建构、深入理解、编排实战</title>
+<link href="//unpkg.com/@wooorm/starry-night@2.1.1/style/both.css" rel="stylesheet" />
+
+
+</head>
+<style>
+body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;padding: 45px;font-size: 16px;font-family: sans-serif;line-height: 1.25;}
+#header{display:flex;padding-bottom:8px;border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));margin-bottom: 16px;}
+#footer {margin-top:64px; text-align: center;font-size: small;}
+
+</style>
+
+<style>
+.postTitle{margin: auto 0;font-size:40px;font-weight:bold;}
+.title-right{display:flex;margin:auto 0 0 auto;}
+.title-right .circle{padding: 14px 16px;margin-right:8px;}
+#postBody{border-bottom: 1px solid var(--color-border-default);padding-bottom:36px;}
+#postBody hr{height:2px;}
+#cmButton{height:48px;margin-top:48px;}
+#comments{margin-top:64px;}
+.g-emoji{font-size:24px;}
+@media (max-width: 600px) {
+    body {padding: 8px;}
+    .postTitle{font-size:24px;}
+}
+.copy-feedback {
+    display: none;
+    position: absolute;
+    top: 10px;
+    right: 50px;
+    color: var(--color-fg-on-emphasis);
+    background-color: var(--color-fg-muted);
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-size: 12px;
+}
+</style>
+
+
+
+
+<body>
+    <div id="header">
+<h1 class="postTitle">CompletableFuture：认知建构、深入理解、编排实战</h1>
+<div class="title-right">
+    <a href="https://Asthenia0412.github.io" id="buttonHome" class="btn btn-invisible circle" title="首页">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathHome" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+    <a href="https://github.com/Asthenia0412/Asthenia0412.github.io/issues/13" target="_blank" class="btn btn-invisible circle" title="Issue">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathIssue" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+
+    <a class="btn btn-invisible circle" onclick="modeSwitch();" title="切换主题">
+        <svg class="octicon" width="16" height="16" >
+            <path id="themeSwitch" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+
+</div>
+</div>
+    <div id="content">
+<div class="markdown-body" id="postBody"><p>最近在项目中频繁使用 <code class="notranslate">CompletableFuture</code> 来处理异步任务，相比传统的 <code class="notranslate">Future</code>，它在灵活性和功能上确实强大很多。这篇文章我想详细聊聊 <code class="notranslate">CompletableFuture</code> 的优势、异步编排的细节，以及如何在实际场景中应用它，包括有依赖关系和无依赖关系的任务编排、与线程池的交互等内容。希望通过我的实践经验，能让大家对这个工具的使用更有感觉。</p>
+<h2>1. CompletableFuture 相较于传统 Future 的优势</h2>
+<p>在 Java 中，<code class="notranslate">Future</code> 是从 JDK 5 开始引入的异步编程接口，但它有一些明显的局限性。我在使用过程中发现，<code class="notranslate">Future</code> 更像是一个“半成品”，功能有限，而 <code class="notranslate">CompletableFuture</code>（JDK 8 引入）则像一个全能选手，弥补了这些不足。以下是我总结的几个关键优势：</p>
+<h3>1.1 非阻塞获取结果</h3>
+<p><code class="notranslate">Future</code> 的 <code class="notranslate">get()</code> 方法是阻塞的，想获取结果只能傻傻地等着。如果任务没完成，线程就会被挂起，这在高并发场景下效率很低。<code class="notranslate">CompletableFuture</code> 提供了非阻塞的方式，比如 <code class="notranslate">thenApply()</code>、<code class="notranslate">thenAccept()</code> 等方法，可以在任务完成后自动触发回调，减少线程阻塞。</p>
+<p>举个例子，假设我要查询用户信息，传统 <code class="notranslate">Future</code> 的写法可能是：</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">Future</span>&lt;<span class="pl-smi">User</span>&gt; <span class="pl-s1">future</span> = <span class="pl-s1">executor</span>.<span class="pl-en">submit</span>(() -&gt; <span class="pl-en">getUserFromDB</span>(<span class="pl-s1">id</span>));
+<span class="pl-smi">User</span> <span class="pl-s1">user</span> = <span class="pl-s1">future</span>.<span class="pl-en">get</span>(); <span class="pl-c">// 阻塞等待</span>
+
+<span class="pl-smi">Future</span>&lt;<span class="pl-smi">User</span>&gt; <span class="pl-s1">future</span> = <span class="pl-s1">executor</span>.<span class="pl-en">submmit</span>(() -&gt; <span class="pl-en">getUserFromDB</span>(<span class="pl-s1">id</span>));
+<span class="pl-smi">User</span> <span class="pl-s1">user</span> = <span class="pl-s1">future</span>.<span class="pl-en">get</span>(); <span class="pl-c">// 阻塞等待</span></pre></div>
+<p>而用 <code class="notranslate">CompletableFuture</code>，我可以这样写：</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-en">getUserFromDB</span>(<span class="pl-s1">id</span>))
+    .<span class="pl-en">thenAccept</span>(<span class="pl-s1">user</span> -&gt; <span class="pl-smi">System</span>.<span class="pl-s1">out</span>.<span class="pl-en">println</span>(<span class="pl-s">"Got user: "</span> + <span class="pl-s1">user</span>)); <span class="pl-c">// 非阻塞回调</span></pre></div>
+<p>这种回调机制让我能更灵活地处理结果，不用干等着。</p>
+<h3>1.2 链式调用与函数式编程</h3>
+<p><code class="notranslate">Future</code> 的另一个痛点是无法方便地进行任务编排。如果有多个异步任务需要串联或组合，<code class="notranslate">Future</code> 的代码会变得很繁琐。<code class="notranslate">CompletableFuture</code> 支持链式调用，结合 Lambda 表达式和函数式编程接口，代码简洁且易读。</p>
+<p>比如，我想先异步获取用户，再根据用户 ID 异步查询订单，可以这样写：</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-en">getUserFromDB</span>(<span class="pl-s1">id</span>))
+    .<span class="pl-en">thenCompose</span>(<span class="pl-s1">user</span> -&gt; <span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-en">getOrdersByUser</span>(<span class="pl-s1">user</span>.<span class="pl-en">getId</span>())))
+    .<span class="pl-en">thenAccept</span>(<span class="pl-s1">orders</span> -&gt; <span class="pl-smi">System</span>.<span class="pl-s1">out</span>.<span class="pl-en">println</span>(<span class="pl-s">"Got orders: "</span> + <span class="pl-s1">orders</span>));</pre></div>
+<p>这种链式调用让我能清晰地表达任务的依赖关系，代码逻辑一目了然。</p>
+<h3>1.3 异常处理</h3>
+<p><code class="notranslate">Future</code> 对异常的处理很粗糙，只能通过 <code class="notranslate">get()</code> 抛出的异常来捕获。而 <code class="notranslate">CompletableFuture</code> 提供了 <code class="notranslate">exceptionally()</code> 和 <code class="notranslate">handle()</code> 方法，能更优雅地处理异常。</p>
+<p>比如：</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; {
+    <span class="pl-k">if</span> (<span class="pl-c1">true</span>) <span class="pl-k">throw</span> <span class="pl-k">new</span> <span class="pl-smi">RuntimeException</span>(<span class="pl-s">"Something went wrong!"</span>);
+    <span class="pl-k">return</span> <span class="pl-s">"Success"</span>;
+}).<span class="pl-en">exceptionally</span>(<span class="pl-s1">ex</span> -&gt; {
+    <span class="pl-smi">System</span>.<span class="pl-s1">out</span>.<span class="pl-en">println</span>(<span class="pl-s">"Error: "</span> + <span class="pl-s1">ex</span>.<span class="pl-en">getMessage</span>());
+    <span class="pl-k">return</span> <span class="pl-s">"Fallback result"</span>;
+}).<span class="pl-en">thenAccept</span>(<span class="pl-smi">System</span>.<span class="pl-s1">out</span>::<span class="pl-s1">println</span>);</pre></div>
+<p>这种方式让我在异步任务中也能像同步代码一样方便地处理异常。</p>
+<h3>1.4 任务组合与并行</h3>
+<p><code class="notranslate">CompletableFuture</code> 提供了强大的任务组合能力，比如 <code class="notranslate">thenCombine()</code>、<code class="notranslate">allOf()</code>、<code class="notranslate">anyOf()</code> 等，可以轻松处理多个异步任务的并行或依赖关系。相比之下，<code class="notranslate">Future</code> 完全没有类似功能，只能靠手动管理线程或 <code class="notranslate">ExecutorService</code> 来实现。</p>
+<h2>2. 异步编排的细节</h2>
+<p><code class="notranslate">CompletableFuture</code> 的核心在于它的异步编排能力。它的 API 设计非常贴近函数式编程，提供了多种方法来处理任务的执行顺序、结果传递和异常处理。下面我详细讲讲这些方法的函数式编程类型，以及如何根据任务依赖关系进行编排。</p>
+<h3>2.1 函数式编程类型</h3>
+<p><code class="notranslate">CompletableFuture</code> 的很多方法都基于 Java 的函数式接口，比如 <code class="notranslate">Supplier</code>、<code class="notranslate">Consumer</code>、<code class="notranslate">Function</code> 等。理解这些接口的输入输出类型，对正确使用 API 至关重要。我整理了几个常用的方法及其对应的函数式接口：</p>
+<ul>
+<li>
+<p><code class="notranslate">runAsync(Runnable)</code></p>
+<ul>
+<li>
+<p><strong>函数式接口</strong>：<code class="notranslate">Runnable</code></p>
+</li>
+<li>
+<p><strong>特点</strong>：没有输入参数，也没有返回值。适合执行不需要返回结果的异步任务。</p>
+</li>
+<li>
+<p><strong>示例</strong>：</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">CompletableFuture</span>.<span class="pl-en">runAsync</span>(() -&gt; <span class="pl-smi">System</span>.<span class="pl-s1">out</span>.<span class="pl-en">println</span>(<span class="pl-s">"Task running!"</span>));</pre></div>
+</li>
+</ul>
+</li>
+<li>
+<p><code class="notranslate">supplyAsync(Supplier&lt;T&gt;)</code></p>
+<ul>
+<li>
+<p><strong>函数式接口</strong>：<code class="notranslate">Supplier&lt;T&gt;</code></p>
+</li>
+<li>
+<p><strong>特点</strong>：没有输入参数，返回一个结果 <code class="notranslate">T</code>。适合需要返回值的异步任务。</p>
+</li>
+<li>
+<p><strong>示例</strong>：</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">CompletableFuture</span>&lt;<span class="pl-smi">String</span>&gt; <span class="pl-s1">future</span> = <span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-s">"Hello"</span>);</pre></div>
+</li>
+</ul>
+</li>
+<li>
+<p><code class="notranslate">thenApply(Function&lt;T, R&gt;)</code></p>
+<ul>
+<li>
+<p><strong>函数式接口</strong>：<code class="notranslate">Function&lt;T, R&gt;</code></p>
+</li>
+<li>
+<p><strong>特点</strong>：接收上一个任务的结果 <code class="notranslate">T</code>，返回新的结果 <code class="notranslate">R</code>。用于结果转换。</p>
+</li>
+<li>
+<p><strong>示例</strong>：</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-s">"Hello"</span>)
+    .<span class="pl-en">thenApply</span>(<span class="pl-s1">s</span> -&gt; <span class="pl-s1">s</span> + <span class="pl-s">" World"</span>)
+    .<span class="pl-en">thenAccept</span>(<span class="pl-smi">System</span>.<span class="pl-s1">out</span>::<span class="pl-s1">println</span>); <span class="pl-c">// 输出：Hello World</span></pre></div>
+</li>
+</ul>
+</li>
+<li>
+<p><code class="notranslate">thenAccept(Consumer&lt;T&gt;)</code></p>
+<ul>
+<li>
+<p><strong>函数式接口</strong>：<code class="notranslate">Consumer&lt;T&gt;</code></p>
+</li>
+<li>
+<p><strong>特点</strong>：接收上一个任务的结果 <code class="notranslate">T</code>，无返回值。适合处理最终结果。</p>
+</li>
+<li>
+<p><strong>示例</strong>：</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-s">"Hello"</span>)
+    .<span class="pl-en">thenAccept</span>(<span class="pl-smi">System</span>.<span class="pl-s1">out</span>::<span class="pl-s1">println</span>); <span class="pl-c">// 输出：Hello</span></pre></div>
+</li>
+</ul>
+</li>
+<li>
+<p><code class="notranslate">thenCompose(Function&lt;T, CompletableFuture&lt;R&gt;&gt;)</code></p>
+<ul>
+<li>
+<p><strong>函数式接口</strong>：<code class="notranslate">Function&lt;T, CompletableFuture&lt;R&gt;&gt;</code></p>
+</li>
+<li>
+<p><strong>特点</strong>：接收上一个任务的结果 <code class="notranslate">T</code>，返回一个新的 <code class="notranslate">CompletableFuture&lt;R&gt;</code>。用于串联有依赖关系的异步任务。</p>
+</li>
+<li>
+<p><strong>示例</strong>：</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-en">getUser</span>(<span class="pl-s1">id</span>))
+    .<span class="pl-en">thenCompose</span>(<span class="pl-s1">user</span> -&gt; <span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-en">getOrders</span>(<span class="pl-s1">user</span>.<span class="pl-en">getId</span>())));</pre></div>
+</li>
+</ul>
+</li>
+<li>
+<p><code class="notranslate">thenCombine(CompletionStage&lt;U&gt;, BiFunction&lt;T, U, R&gt;)</code></p>
+<ul>
+<li>
+<p><strong>函数式接口</strong>：<code class="notranslate">BiFunction&lt;T, U, R&gt;</code></p>
+</li>
+<li>
+<p><strong>特点</strong>：合并两个异步任务的结果 <code class="notranslate">T</code> 和 <code class="notranslate">U</code>，返回新的结果 <code class="notranslate">R</code>。适合处理并行任务的合并。</p>
+</li>
+<li>
+<p><strong>示例</strong>：</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">CompletableFuture</span>&lt;<span class="pl-smi">String</span>&gt; <span class="pl-s1">future1</span> = <span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-s">"Hello"</span>);
+<span class="pl-smi">CompletableFuture</span>&lt;<span class="pl-smi">String</span>&gt; <span class="pl-s1">future2</span> = <span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-s">"World"</span>);
+<span class="pl-s1">future1</span>.<span class="pl-en">thenCombine</span>(<span class="pl-s1">future2</span>, (<span class="pl-s1">s1</span>, <span class="pl-s1">s2</span>) -&gt; <span class="pl-s1">s1</span> + <span class="pl-s">" "</span> + <span class="pl-s1">s2</span>)
+       .<span class="pl-en">thenAccept</span>(<span class="pl-smi">System</span>.<span class="pl-s1">out</span>::<span class="pl-s1">println</span>); <span class="pl-c">// 输出：Hello World</span></pre></div>
+</li>
+</ul>
+</li>
+</ul>
+<h3>2.2 有依赖关系的任务编排</h3>
+<p>当任务之间存在依赖关系时（比如任务 B 需要任务 A 的结果），我通常使用 <code class="notranslate">thenApply()</code> 或 <code class="notranslate">thenCompose()</code> 来串联任务。两者的区别在于：</p>
+<ul>
+<li><code class="notranslate">thenApply()</code>：用于简单的结果转换，返回的不是 <code class="notranslate">CompletableFuture</code>。</li>
+<li><code class="notranslate">thenCompose()</code>：用于串联另一个异步任务，返回的是 <code class="notranslate">CompletableFuture</code>。</li>
+</ul>
+<p>假设我要先查用户信息，再根据用户 ID 查订单，代码如下：</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">CompletableFuture</span>&lt;<span class="pl-smi">User</span>&gt; <span class="pl-s1">userFuture</span> = <span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-en">getUserFromDB</span>(<span class="pl-s1">id</span>));
+<span class="pl-smi">CompletableFuture</span>&lt;<span class="pl-smi">List</span>&lt;<span class="pl-smi">Order</span>&gt;&gt; <span class="pl-s1">ordersFuture</span> = <span class="pl-s1">userFuture</span>.<span class="pl-en">thenCompose</span>(<span class="pl-s1">user</span> -&gt; 
+    <span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-en">getOrdersByUser</span>(<span class="pl-s1">user</span>.<span class="pl-en">getId</span>()))
+);
+<span class="pl-s1">ordersFuture</span>.<span class="pl-en">thenAccept</span>(<span class="pl-s1">orders</span> -&gt; <span class="pl-smi">System</span>.<span class="pl-s1">out</span>.<span class="pl-en">println</span>(<span class="pl-s">"Orders: "</span> + <span class="pl-s1">orders</span>));</pre></div>
+<p>这里 <code class="notranslate">thenCompose()</code> 确保了第二个异步任务（查询订单）在第一个任务（查询用户）完成后才开始，很好地表达了依赖关系。</p>
+<h3>2.3 无依赖关系的任务编排</h3>
+<p>当任务之间没有依赖关系时，我通常会并行执行它们，然后用 <code class="notranslate">allOf()</code> 或 <code class="notranslate">anyOf()</code> 来等待所有任务或任意一个任务完成。</p>
+<ul>
+<li>
+<p><code class="notranslate">allOf()</code>：等待所有任务完成，常用于批量异步任务。<br>
+示例：同时查询用户信息和订单信息：</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">CompletableFuture</span>&lt;<span class="pl-smi">User</span>&gt; <span class="pl-s1">userFuture</span> = <span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-en">getUserFromDB</span>(<span class="pl-s1">id</span>));
+<span class="pl-smi">CompletableFuture</span>&lt;<span class="pl-smi">List</span>&lt;<span class="pl-smi">Order</span>&gt;&gt; <span class="pl-s1">ordersFuture</span> = <span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-en">getOrdersFromDB</span>());
+<span class="pl-smi">CompletableFuture</span>&lt;<span class="pl-smi">Void</span>&gt; <span class="pl-s1">all</span> = <span class="pl-smi">CompletableFuture</span>.<span class="pl-en">allOf</span>(<span class="pl-s1">userFuture</span>, <span class="pl-s1">ordersFuture</span>);
+<span class="pl-s1">all</span>.<span class="pl-en">thenRun</span>(() -&gt; {
+    <span class="pl-smi">User</span> <span class="pl-s1">user</span> = <span class="pl-s1">userFuture</span>.<span class="pl-en">join</span>();
+    <span class="pl-smi">List</span>&lt;<span class="pl-smi">Order</span>&gt; <span class="pl-s1">orders</span> = <span class="pl-s1">ordersFuture</span>.<span class="pl-en">join</span>();
+    <span class="pl-smi">System</span>.<span class="pl-s1">out</span>.<span class="pl-en">println</span>(<span class="pl-s">"User: "</span> + <span class="pl-s1">user</span> + <span class="pl-s">", Orders: "</span> + <span class="pl-s1">orders</span>);
+});</pre></div>
+</li>
+<li>
+<p><code class="notranslate">anyOf()</code>：等待任意一个任务完成，适合需要快速响应的场景。<br>
+示例：从多个数据源查询用户信息，取最快的结果：</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">CompletableFuture</span>&lt;<span class="pl-smi">User</span>&gt; <span class="pl-s1">source1</span> = <span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-en">getUserFromSource1</span>(<span class="pl-s1">id</span>));
+<span class="pl-smi">CompletableFuture</span>&lt;<span class="pl-smi">User</span>&gt; <span class="pl-s1">source2</span> = <span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-en">getUserFromSource2</span>(<span class="pl-s1">id</span>));
+<span class="pl-smi">CompletableFuture</span>.<span class="pl-en">anyOf</span>(<span class="pl-s1">source1</span>, <span class="pl-s1">source2</span>)
+    .<span class="pl-en">thenAccept</span>(<span class="pl-s1">user</span> -&gt; <span class="pl-smi">System</span>.<span class="pl-s1">out</span>.<span class="pl-en">println</span>(<span class="pl-s">"Got user: "</span> + <span class="pl-s1">user</span>));</pre></div>
+</li>
+</ul>
+<h3>2.4 与线程池的交互</h3>
+<p><code class="notranslate">CompletableFuture</code> 默认使用 <code class="notranslate">ForkJoinPool.commonPool()</code> 来执行异步任务，但我们也可以通过自定义 <code class="notranslate">Executor</code> 来指定线程池，这在生产环境中非常重要。比如，控制线程数量、设置线程优先级等。</p>
+<p>自定义线程池的写法如下：</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">ExecutorService</span> <span class="pl-s1">executor</span> = <span class="pl-smi">Executors</span>.<span class="pl-en">newFixedThreadPool</span>(<span class="pl-c1">4</span>);
+<span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; <span class="pl-en">getUserFromDB</span>(<span class="pl-s1">id</span>), <span class="pl-s1">executor</span>)
+    .<span class="pl-en">thenApplyAsync</span>(<span class="pl-s1">user</span> -&gt; <span class="pl-en">processUser</span>(<span class="pl-s1">user</span>), <span class="pl-s1">executor</span>)
+    .<span class="pl-en">thenAcceptAsync</span>(<span class="pl-smi">System</span>.<span class="pl-s1">out</span>::<span class="pl-s1">println</span>, <span class="pl-s1">executor</span>);</pre></div>
+<p>注意：</p>
+<ul>
+<li>使用 <code class="notranslate">thenApplyAsync()</code> 或 <code class="notranslate">supplyAsync(Supplier, Executor)</code> 可以指定线程池。</li>
+<li>自定义线程池可以避免 <code class="notranslate">ForkJoinPool</code> 在高并发场景下的性能问题，比如线程膨胀。</li>
+<li>记得在程序结束时关闭线程池（<code class="notranslate">executor.shutdown()</code>），避免资源泄漏。</li>
+</ul>
+<h2>3. 实际案例：综合编排</h2>
+<p>为了让大家更直观地理解，我写一个稍微复杂的案例：假设我要开发一个电商系统，需要异步查询用户信息、订单信息和库存信息，然后将结果汇总。用户和订单有依赖关系（订单需要用户 ID），而库存信息独立。</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">ExecutorService</span> <span class="pl-s1">executor</span> = <span class="pl-smi">Executors</span>.<span class="pl-en">newFixedThreadPool</span>(<span class="pl-c1">4</span>);
+
+<span class="pl-smi">CompletableFuture</span>&lt;<span class="pl-smi">User</span>&gt; <span class="pl-s1">userFuture</span> = <span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; {
+    <span class="pl-smi">System</span>.<span class="pl-s1">out</span>.<span class="pl-en">println</span>(<span class="pl-s">"Fetching user..."</span>);
+    <span class="pl-k">return</span> <span class="pl-en">getUserFromDB</span>(<span class="pl-c1">1</span>);
+}, <span class="pl-s1">executor</span>);
+
+<span class="pl-smi">CompletableFuture</span>&lt;<span class="pl-smi">List</span>&lt;<span class="pl-smi">Order</span>&gt;&gt; <span class="pl-s1">ordersFuture</span> = <span class="pl-s1">userFuture</span>.<span class="pl-en">thenCompose</span>(<span class="pl-s1">user</span> -&gt; 
+    <span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; {
+        <span class="pl-smi">System</span>.<span class="pl-s1">out</span>.<span class="pl-en">println</span>(<span class="pl-s">"Fetching orders for user "</span> + <span class="pl-s1">user</span>.<span class="pl-en">getId</span>());
+        <span class="pl-k">return</span> <span class="pl-en">getOrdersByUser</span>(<span class="pl-s1">user</span>.<span class="pl-en">getId</span>());
+    }, <span class="pl-s1">executor</span>)
+);
+
+<span class="pl-smi">CompletableFuture</span>&lt;<span class="pl-smi">List</span>&lt;<span class="pl-smi">Inventory</span>&gt;&gt; <span class="pl-s1">inventoryFuture</span> = <span class="pl-smi">CompletableFuture</span>.<span class="pl-en">supplyAsync</span>(() -&gt; {
+    <span class="pl-smi">System</span>.<span class="pl-s1">out</span>.<span class="pl-en">println</span>(<span class="pl-s">"Fetching inventory..."</span>);
+    <span class="pl-k">return</span> <span class="pl-en">getInventoryFromDB</span>();
+}, <span class="pl-s1">executor</span>);
+
+<span class="pl-smi">CompletableFuture</span>.<span class="pl-en">allOf</span>(<span class="pl-s1">ordersFuture</span>, <span class="pl-s1">inventoryFuture</span>).<span class="pl-en">thenRun</span>(() -&gt; {
+    <span class="pl-smi">List</span>&lt;<span class="pl-smi">Order</span>&gt; <span class="pl-s1">orders</span> = <span class="pl-s1">ordersFuture</span>.<span class="pl-en">join</span>();
+    <span class="pl-smi">List</span>&lt;<span class="pl-smi">Inventory</span>&gt; <span class="pl-s1">inventory</span> = <span class="pl-s1">inventoryFuture</span>.<span class="pl-en">join</span>();
+    <span class="pl-smi">System</span>.<span class="pl-s1">out</span>.<span class="pl-en">println</span>(<span class="pl-s">"Summary: Orders="</span> + <span class="pl-s1">orders</span> + <span class="pl-s">", Inventory="</span> + <span class="pl-s1">inventory</span>);
+});
+
+<span class="pl-s1">executor</span>.<span class="pl-en">shutdown</span>();</pre></div>
+<p>这个例子展示了：</p>
+<ul>
+<li>有依赖的任务（用户 → 订单）用 <code class="notranslate">thenCompose()</code>。</li>
+<li>无依赖的任务（订单和库存）用 <code class="notranslate">allOf()</code> 合并。</li>
+<li>自定义线程池来控制资源使用。</li>
+</ul>
+<h2>4. 总结</h2>
+<p>通过这段时间的使用，我觉得 <code class="notranslate">CompletableFuture</code> 最大的魅力在于它的灵活性和函数式编程风格。它不仅解决了 <code class="notranslate">Future</code> 的阻塞和编排难题，还提供了强大的异常处理和任务组合能力。在实际项目中，无论是串联有依赖的任务，还是并行处理无依赖的任务，它都能让代码更简洁、更高效。</p></div>
+<div style="font-size:small;margin-top:8px;float:right;"></div>
+
+<button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
+<div class="comments" id="comments"></div>
+
+</div>
+    <div id="footer"><div id="footer1">Copyright © <span id="copyrightYear"></span> <a href="https://Asthenia0412.github.io">Asthenia的随笔</a></div>
+<div id="footer2">
+    <span id="runday"></span><span>Powered by <a href="https://meekdai.com/Gmeek.html" target="_blank">Gmeek</a></span>
+</div>
+
+<script>
+var now=new Date();
+document.getElementById("copyrightYear").innerHTML=now.getFullYear();
+
+if(""!=""){
+    var startSite=new Date("");
+    var diff=now.getTime()-startSite.getTime();
+    var diffDay=Math.floor(diff/(1000*60*60*24));
+    document.getElementById("runday").innerHTML="网站运行"+diffDay+"天"+" • ";
+}
+</script></div>
+</body>
+<script>
+var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z', 'copy': 'M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z', 'check': 'M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z'};
+var utterancesLoad=0;
+
+let themeSettings={
+    "dark": ["dark","moon","#00f0ff","dark-blue"],
+    "light": ["light","sun","#ff5000","github-light"],
+    "auto": ["auto","sync","","preferred-color-scheme"]
+};
+function changeTheme(mode, icon, color, utheme){
+    document.documentElement.setAttribute("data-color-mode",mode);
+    document.getElementById("themeSwitch").setAttribute("d",value=IconList[icon]);
+    document.getElementById("themeSwitch").parentNode.style.color=color;
+    if(utterancesLoad==1){utterancesTheme(utheme);}
+}
+function modeSwitch(){
+    let currentMode=document.documentElement.getAttribute('data-color-mode');
+    let newMode = currentMode === "light" ? "dark" : currentMode === "dark" ? "auto" : "light";
+    localStorage.setItem("meek_theme", newMode);
+    if(themeSettings[newMode]){
+        changeTheme(...themeSettings[newMode]);
+    }
+}
+function utterancesTheme(theme){
+    const message={type:'set-theme',theme: theme};
+    const iframe=document.getElementsByClassName('utterances-frame')[0];
+    iframe.contentWindow.postMessage(message,'https://utteranc.es');
+}
+if(themeSettings[theme]){changeTheme(...themeSettings[theme]);}
+console.log("\n %c Gmeek last https://github.com/Meekdai/Gmeek \n","padding:5px 0;background:#02d81d;color:#fff");
+</script>
+
+<script>
+document.getElementById("pathHome").setAttribute("d",IconList["home"]);
+document.getElementById("pathIssue").setAttribute("d",IconList["github"]);
+
+
+
+function openComments(){
+    cm=document.getElementById("comments");
+    cmButton=document.getElementById("cmButton");
+    cmButton.innerHTML="loading";
+    span=document.createElement("span");
+    span.setAttribute("class","AnimatedEllipsis");
+    cmButton.appendChild(span);
+
+    script=document.createElement("script");
+    script.setAttribute("src","https://utteranc.es/client.js");
+    script.setAttribute("repo","Asthenia0412/Asthenia0412.github.io");
+    script.setAttribute("issue-term","title");
+    
+    if(localStorage.getItem("meek_theme")=="dark"){script.setAttribute("theme","dark-blue");}
+    else if(localStorage.getItem("meek_theme")=="light") {script.setAttribute("theme","github-light");}
+    else{script.setAttribute("theme","preferred-color-scheme");}
+    
+    script.setAttribute("crossorigin","anonymous");
+    script.setAttribute("async","");
+    cm.appendChild(script);
+
+    int=self.setInterval("iFrameLoading()",200);
+}
+
+function iFrameLoading(){
+    var utterances=document.getElementsByClassName('utterances');
+    if(utterances.length==1){
+        if(utterances[0].style.height!=""){
+            utterancesLoad=1;
+            int=window.clearInterval(int);
+            document.getElementById("cmButton").style.display="none";
+            console.log("utterances Load OK");
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const createClipboardHTML = (codeContent, additionalClasses = '') => `
+        <pre class="notranslate"><code class="notranslate">${codeContent}</code></pre>
+        <div class="clipboard-container position-absolute right-0 top-0 ${additionalClasses}">
+            <clipboard-copy class="ClipboardButton btn m-2 p-0" role="button" style="display: inherit;">
+                <svg height="16" width="16" class="octicon octicon-copy m-2"><path d="${IconList["copy"]}"></path></svg>
+                <svg height="16" width="16" class="octicon octicon-check color-fg-success m-2 d-none"><path d="${IconList["check"]}"></path></svg>
+            </clipboard-copy>
+            <div class="copy-feedback">Copied!</div>
+        </div>
+    `;
+
+    const handleCodeElements = (selector = '') => {
+        document.querySelectorAll(selector).forEach(codeElement => {
+            const codeContent = codeElement.innerHTML;
+            const newStructure = document.createElement('div');
+            newStructure.className = 'snippet-clipboard-content position-relative overflow-auto';
+            newStructure.innerHTML = createClipboardHTML(codeContent);
+
+            const parentElement = codeElement.parentElement;
+            if (selector.includes('highlight')) {
+                parentElement.insertBefore(newStructure, codeElement.nextSibling);
+                parentElement.removeChild(codeElement);
+            } else {
+                parentElement.parentElement.replaceChild(newStructure, parentElement);
+            }
+        });
+    };
+
+    handleCodeElements('pre.notranslate > code.notranslate');
+    handleCodeElements('div.highlight > pre.notranslate');
+
+    let currentFeedback = null;
+    document.querySelectorAll('clipboard-copy').forEach(copyButton => {
+        copyButton.addEventListener('click', () => {
+            const codeContent = copyButton.closest('.snippet-clipboard-content').innerText;
+            const tempTextArea = document.createElement('textarea');
+            tempTextArea.value = codeContent;
+            document.body.appendChild(tempTextArea);
+            tempTextArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempTextArea);
+
+            const copyIcon = copyButton.querySelector('.octicon-copy');
+            const checkIcon = copyButton.querySelector('.octicon-check');
+            const copyFeedback = copyButton.nextElementSibling;
+
+            if (currentFeedback && currentFeedback !== copyFeedback) {currentFeedback.style.display = 'none';}
+            currentFeedback = copyFeedback;
+
+            copyIcon.classList.add('d-none');
+            checkIcon.classList.remove('d-none');
+            copyFeedback.style.display = 'block';
+            copyButton.style.borderColor = 'var(--color-success-fg)';
+
+            setTimeout(() => {
+                copyIcon.classList.remove('d-none');
+                checkIcon.classList.add('d-none');
+                copyFeedback.style.display = 'none';
+                copyButton.style.borderColor = '';
+            }, 2000);
+        });
+    });
+});
+
+</script>
+
+
+</html>
