@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html data-color-mode="light" data-dark-theme="dark" data-light-theme="light" lang="zh-CN">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link href='https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/Primer/21.0.7/primer.css' rel='stylesheet' />
+    
+    <link rel="icon" href="https://github.githubassets.com/favicons/favicon.svg"><script>
+        let theme = localStorage.getItem("meek_theme") || "light";
+        document.documentElement.setAttribute("data-color-mode", theme);
+    </script>
+<meta name="description" content="在工作中经常需要处理并发任务，Java的线程池是绕不过去的工具。">
+<meta property="og:title" content="线程池：浅谈四种常考任务队列+ScheduledThreadPoolExecutor细节剖析">
+<meta property="og:description" content="在工作中经常需要处理并发任务，Java的线程池是绕不过去的工具。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://Asthenia0412.github.io/post/xian-cheng-chi-%EF%BC%9A-qian-tan-si-zhong-chang-kao-ren-wu-dui-lie-%2BScheduledThreadPoolExecutor-xi-jie-pou-xi.html">
+<meta property="og:image" content="https://github.githubassets.com/favicons/favicon.svg">
+<title>线程池：浅谈四种常考任务队列+ScheduledThreadPoolExecutor细节剖析</title>
+<link href="//unpkg.com/@wooorm/starry-night@2.1.1/style/both.css" rel="stylesheet" />
+
+
+</head>
+<style>
+body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;padding: 45px;font-size: 16px;font-family: sans-serif;line-height: 1.25;}
+#header{display:flex;padding-bottom:8px;border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));margin-bottom: 16px;}
+#footer {margin-top:64px; text-align: center;font-size: small;}
+
+</style>
+
+<style>
+.postTitle{margin: auto 0;font-size:40px;font-weight:bold;}
+.title-right{display:flex;margin:auto 0 0 auto;}
+.title-right .circle{padding: 14px 16px;margin-right:8px;}
+#postBody{border-bottom: 1px solid var(--color-border-default);padding-bottom:36px;}
+#postBody hr{height:2px;}
+#cmButton{height:48px;margin-top:48px;}
+#comments{margin-top:64px;}
+.g-emoji{font-size:24px;}
+@media (max-width: 600px) {
+    body {padding: 8px;}
+    .postTitle{font-size:24px;}
+}
+.copy-feedback {
+    display: none;
+    position: absolute;
+    top: 10px;
+    right: 50px;
+    color: var(--color-fg-on-emphasis);
+    background-color: var(--color-fg-muted);
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-size: 12px;
+}
+</style>
+
+
+
+
+<body>
+    <div id="header">
+<h1 class="postTitle">线程池：浅谈四种常考任务队列+ScheduledThreadPoolExecutor细节剖析</h1>
+<div class="title-right">
+    <a href="https://Asthenia0412.github.io" id="buttonHome" class="btn btn-invisible circle" title="首页">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathHome" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+    <a href="https://github.com/Asthenia0412/Asthenia0412.github.io/issues/16" target="_blank" class="btn btn-invisible circle" title="Issue">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathIssue" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+
+    <a class="btn btn-invisible circle" onclick="modeSwitch();" title="切换主题">
+        <svg class="octicon" width="16" height="16" >
+            <path id="themeSwitch" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+
+</div>
+</div>
+    <div id="content">
+<div class="markdown-body" id="postBody"><p>在工作中经常需要处理并发任务，Java的线程池是绕不过去的工具。线程池的核心之一是它的任务队列，而<code class="notranslate">ScheduledThreadPoolExecutor</code>更是定时任务场景下的利器。今天我想深入聊聊线程池中可选的四种队列，特别是延迟队列（<code class="notranslate">DelayedWorkQueue</code>），并结合<code class="notranslate">ScheduledThreadPoolExecutor</code>的底层原理，分析潜在的风险点，以及<code class="notranslate">Executors</code>工厂是否生产定时任务线程池。</p>
+<h2>线程池中的四种队列</h2>
+<p>Java线程池（<code class="notranslate">ThreadPoolExecutor</code>）的任务队列决定了任务的调度方式，常用的队列有以下四种：</p>
+<ol>
+<li>
+<p><strong>SynchronousQueue</strong><br>
+这是一个没有容量的队列，每次提交任务时，必须有一个线程立即接收，否则任务会被拒绝（由<code class="notranslate">RejectedExecutionHandler</code>处理）。我用<code class="notranslate">SynchronousQueue</code>时，通常是为了追求低延迟的场景，比如实时性要求高的任务处理。</p>
+<ul>
+<li><strong>特点</strong>：没有缓冲，提交任务和线程执行是“手递手”的直接传递。</li>
+<li><strong>适用场景</strong>：任务量少、需要快速响应的场景。</li>
+<li><strong>缺点</strong>：任务提交频繁时，如果线程池的线程数已达上限（<code class="notranslate">maximumPoolSize</code>），新任务会被拒绝，可能导致任务丢失。</li>
+</ul>
+</li>
+<li>
+<p><strong>LinkedBlockingQueue</strong><br>
+这是一个基于链表的阻塞队列，默认容量是<code class="notranslate">Integer.MAX_VALUE</code>（近乎无限）。我常用它来处理任务量较大的场景，任务可以排队等待，不会被立即拒绝。</p>
+<ul>
+<li><strong>特点</strong>：支持无界队列，任务可以无限堆积。</li>
+<li><strong>适用场景</strong>：任务量波动大，允许任务排队的场景。</li>
+<li><strong>缺点</strong>：如果任务生产速度远超消费速度，可能导致内存溢出（OOM）。</li>
+</ul>
+</li>
+<li>
+<p><strong>ArrayBlockingQueue</strong><br>
+这是一个固定大小的数组实现的阻塞队列，容量在创建时指定。我在需要限制任务积压数量时会选择它，比如控制内存使用。</p>
+<ul>
+<li><strong>特点</strong>：有界队列，容量固定，任务超出容量时会被阻塞或拒绝。</li>
+<li><strong>适用场景</strong>：对任务积压量有严格控制的场景。</li>
+<li><strong>缺点</strong>：需要合理设置容量，过小可能导致任务频繁拒绝，过大可能占用过多内存。</li>
+</ul>
+</li>
+<li>
+<p><strong>DelayedWorkQueue</strong><br>
+这是<code class="notranslate">ScheduledThreadPoolExecutor</code>专用的延迟队列，基于优先级队列（<code class="notranslate">PriorityQueue</code>）实现，任务按延迟时间排序。我第一次接触它时，觉得它的设计非常巧妙：不仅支持延迟执行，还能处理周期性任务。</p>
+<ul>
+<li><strong>实现原理</strong>：内部维护一个基于堆的优先级队列，任务以<code class="notranslate">ScheduledFutureTask</code>形式存储，包含任务的执行时间和周期信息。队列通过<code class="notranslate">compareTo</code>方法根据任务的触发时间排序，最早触发的任务排在队首。</li>
+<li><strong>工作机制</strong>：<code class="notranslate">ScheduledThreadPoolExecutor</code>的工作线程会不断检查队首任务是否到时间（通过<code class="notranslate">getDelay()</code>判断）。如果未到时间，线程会等待（通过<code class="notranslate">Condition</code>的<code class="notranslate">awaitNanos</code>实现精确等待）；如果到时间，线程会取出任务执行，并根据任务是否周期性重新入队。</li>
+<li><strong>特点</strong>：支持延迟和周期性任务，任务按触发时间排序。</li>
+<li><strong>适用场景</strong>：定时任务、延迟任务，比如定时发送邮件、清理过期数据等。</li>
+<li><strong>缺点</strong>：任务执行时间过长可能导致后续任务延迟；队列操作（入队/出队）的复杂度为<code class="notranslate">O(log n)</code>，任务量极大时可能影响性能。</li>
+</ul>
+</li>
+</ol>
+<h2>ScheduledThreadPoolExecutor的底层原理</h2>
+<p><code class="notranslate">ScheduledThreadPoolExecutor</code>继承自<code class="notranslate">ThreadPoolExecutor</code>，但专门为定时任务设计，核心是它的<code class="notranslate">DelayedWorkQueue</code>和<code class="notranslate">ScheduledFutureTask</code>。我来拆解一下它的底层逻辑：</p>
+<ol>
+<li>
+<p><strong>任务提交与存储</strong><br>
+当我调用<code class="notranslate">schedule</code>或<code class="notranslate">scheduleAtFixedRate</code>提交任务时，<code class="notranslate">ScheduledThreadPoolExecutor</code>会将任务封装为<code class="notranslate">ScheduledFutureTask</code>对象，包含以下关键信息：</p>
+<ul>
+<li>任务的触发时间（<code class="notranslate">time</code>）：基于<code class="notranslate">System.nanoTime()</code>计算。</li>
+<li>任务的周期（<code class="notranslate">period</code>）：如果是固定速率或固定延迟任务，会记录周期值。</li>
+<li>任务本体（<code class="notranslate">Runnable</code>或<code class="notranslate">Callable</code>）。<br>
+这些任务被放入<code class="notranslate">DelayedWorkQueue</code>，按触发时间排序。</li>
+</ul>
+</li>
+<li>
+<p><strong>任务调度</strong><br>
+线程池的工作线程会从<code class="notranslate">DelayedWorkQueue</code>中获取任务。队首任务如果未到触发时间，线程会调用<code class="notranslate">take()</code>方法进入等待状态，利用<code class="notranslate">LockSupport.parkNanos</code>实现高效的纳秒级等待。一旦任务到达触发时间，线程会被唤醒，执行任务。</p>
+</li>
+<li>
+<p><strong>周期任务处理</strong><br>
+对于周期性任务（如<code class="notranslate">scheduleAtFixedRate</code>或<code class="notranslate">scheduleWithFixedDelay</code>），任务执行完后，<code class="notranslate">ScheduledFutureTask</code>会根据周期重新计算下次触发时间，并重新入队。这种“自我续期”的机制让周期任务能持续运行。</p>
+</li>
+<li>
+<p><strong>拒绝策略与线程管理</strong><br>
+和<code class="notranslate">ThreadPoolExecutor</code>一样，<code class="notranslate">ScheduledThreadPoolExecutor</code>也有拒绝策略，默认是抛出<code class="notranslate">RejectedExecutionException</code>。但它的线程管理更严格：核心线程数（<code class="notranslate">corePoolSize</code>）通常足够应付任务，最大线程数（<code class="notranslate">maximumPoolSize</code>）一般不起作用，因为队列是无界的。</p>
+</li>
+</ol>
+<h2>潜在的风险点</h2>
+<p>在使用<code class="notranslate">ScheduledThreadPoolExecutor</code>时，我遇到过一些“坑”，总结了以下风险点：</p>
+<ol>
+<li>
+<p><strong>任务执行时间过长</strong><br>
+如果某个任务执行时间过长（比如IO阻塞或复杂计算），后续任务可能被延迟，因为工作线程被占用。这在固定速率任务（<code class="notranslate">scheduleAtFixedRate</code>）中尤其明显，可能导致任务堆积。</p>
+</li>
+<li>
+<p><strong>队列积压与内存问题</strong><br>
+<code class="notranslate">DelayedWorkQueue</code>是无界队列，如果任务提交速度过快（比如短周期的定时任务），可能导致队列无限增长，最终引发OOM。</p>
+</li>
+<li>
+<p><strong>线程池关闭不彻底</strong><br>
+如果调用<code class="notranslate">shutdown</code>后没有等待所有任务完成（<code class="notranslate">awaitTermination</code>），可能导致任务未执行就终止。尤其是周期任务，可能在队列中残留。</p>
+</li>
+<li>
+<p><strong>时间精度问题</strong><br>
+虽然<code class="notranslate">ScheduledThreadPoolExecutor</code>使用<code class="notranslate">System.nanoTime()</code>保证高精度，但JVM的调度和系统负载可能导致微小的时间偏差，特别是在高并发场景下。</p>
+</li>
+<li>
+<p><strong>异常处理不足</strong><br>
+默认情况下，任务抛出未捕获异常不会影响线程池，但可能导致任务无声失败。我通常会在任务内部加<code class="notranslate">try-catch</code>来记录异常。</p>
+</li>
+</ol>
+<h2>Executors工厂是否生产定时任务线程池？</h2>
+<p>答案是肯定的。<code class="notranslate">Executors</code>工厂类提供了<code class="notranslate">newScheduledThreadPool</code>方法，用于创建<code class="notranslate">ScheduledThreadPoolExecutor</code>实例。例如：</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">ScheduledExecutorService</span> <span class="pl-s1">scheduler</span> = <span class="pl-smi">Executors</span>.<span class="pl-en">newScheduledThreadPool</span>(<span class="pl-c1">5</span>);</pre></div>
+<p>这个方法会返回一个核心线程数为指定值的<code class="notranslate">ScheduledThreadPoolExecutor</code>，内部使用<code class="notranslate">DelayedWorkQueue</code>作为任务队列。不过，<code class="notranslate">Executors</code>创建的线程池有一些默认配置（比如无界队列），可能不适合所有场景。我通常会直接实例化<code class="notranslate">ScheduledThreadPoolExecutor</code>，以便更灵活地配置参数。</p></div>
+<div style="font-size:small;margin-top:8px;float:right;"></div>
+
+<button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
+<div class="comments" id="comments"></div>
+
+</div>
+    <div id="footer"><div id="footer1">Copyright © <span id="copyrightYear"></span> <a href="https://Asthenia0412.github.io">Asthenia的随笔</a></div>
+<div id="footer2">
+    <span id="runday"></span><span>Powered by <a href="https://meekdai.com/Gmeek.html" target="_blank">Gmeek</a></span>
+</div>
+
+<script>
+var now=new Date();
+document.getElementById("copyrightYear").innerHTML=now.getFullYear();
+
+if(""!=""){
+    var startSite=new Date("");
+    var diff=now.getTime()-startSite.getTime();
+    var diffDay=Math.floor(diff/(1000*60*60*24));
+    document.getElementById("runday").innerHTML="网站运行"+diffDay+"天"+" • ";
+}
+</script></div>
+</body>
+<script>
+var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z', 'copy': 'M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z', 'check': 'M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z'};
+var utterancesLoad=0;
+
+let themeSettings={
+    "dark": ["dark","moon","#00f0ff","dark-blue"],
+    "light": ["light","sun","#ff5000","github-light"],
+    "auto": ["auto","sync","","preferred-color-scheme"]
+};
+function changeTheme(mode, icon, color, utheme){
+    document.documentElement.setAttribute("data-color-mode",mode);
+    document.getElementById("themeSwitch").setAttribute("d",value=IconList[icon]);
+    document.getElementById("themeSwitch").parentNode.style.color=color;
+    if(utterancesLoad==1){utterancesTheme(utheme);}
+}
+function modeSwitch(){
+    let currentMode=document.documentElement.getAttribute('data-color-mode');
+    let newMode = currentMode === "light" ? "dark" : currentMode === "dark" ? "auto" : "light";
+    localStorage.setItem("meek_theme", newMode);
+    if(themeSettings[newMode]){
+        changeTheme(...themeSettings[newMode]);
+    }
+}
+function utterancesTheme(theme){
+    const message={type:'set-theme',theme: theme};
+    const iframe=document.getElementsByClassName('utterances-frame')[0];
+    iframe.contentWindow.postMessage(message,'https://utteranc.es');
+}
+if(themeSettings[theme]){changeTheme(...themeSettings[theme]);}
+console.log("\n %c Gmeek last https://github.com/Meekdai/Gmeek \n","padding:5px 0;background:#02d81d;color:#fff");
+</script>
+
+<script>
+document.getElementById("pathHome").setAttribute("d",IconList["home"]);
+document.getElementById("pathIssue").setAttribute("d",IconList["github"]);
+
+
+
+function openComments(){
+    cm=document.getElementById("comments");
+    cmButton=document.getElementById("cmButton");
+    cmButton.innerHTML="loading";
+    span=document.createElement("span");
+    span.setAttribute("class","AnimatedEllipsis");
+    cmButton.appendChild(span);
+
+    script=document.createElement("script");
+    script.setAttribute("src","https://utteranc.es/client.js");
+    script.setAttribute("repo","Asthenia0412/Asthenia0412.github.io");
+    script.setAttribute("issue-term","title");
+    
+    if(localStorage.getItem("meek_theme")=="dark"){script.setAttribute("theme","dark-blue");}
+    else if(localStorage.getItem("meek_theme")=="light") {script.setAttribute("theme","github-light");}
+    else{script.setAttribute("theme","preferred-color-scheme");}
+    
+    script.setAttribute("crossorigin","anonymous");
+    script.setAttribute("async","");
+    cm.appendChild(script);
+
+    int=self.setInterval("iFrameLoading()",200);
+}
+
+function iFrameLoading(){
+    var utterances=document.getElementsByClassName('utterances');
+    if(utterances.length==1){
+        if(utterances[0].style.height!=""){
+            utterancesLoad=1;
+            int=window.clearInterval(int);
+            document.getElementById("cmButton").style.display="none";
+            console.log("utterances Load OK");
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const createClipboardHTML = (codeContent, additionalClasses = '') => `
+        <pre class="notranslate"><code class="notranslate">${codeContent}</code></pre>
+        <div class="clipboard-container position-absolute right-0 top-0 ${additionalClasses}">
+            <clipboard-copy class="ClipboardButton btn m-2 p-0" role="button" style="display: inherit;">
+                <svg height="16" width="16" class="octicon octicon-copy m-2"><path d="${IconList["copy"]}"></path></svg>
+                <svg height="16" width="16" class="octicon octicon-check color-fg-success m-2 d-none"><path d="${IconList["check"]}"></path></svg>
+            </clipboard-copy>
+            <div class="copy-feedback">Copied!</div>
+        </div>
+    `;
+
+    const handleCodeElements = (selector = '') => {
+        document.querySelectorAll(selector).forEach(codeElement => {
+            const codeContent = codeElement.innerHTML;
+            const newStructure = document.createElement('div');
+            newStructure.className = 'snippet-clipboard-content position-relative overflow-auto';
+            newStructure.innerHTML = createClipboardHTML(codeContent);
+
+            const parentElement = codeElement.parentElement;
+            if (selector.includes('highlight')) {
+                parentElement.insertBefore(newStructure, codeElement.nextSibling);
+                parentElement.removeChild(codeElement);
+            } else {
+                parentElement.parentElement.replaceChild(newStructure, parentElement);
+            }
+        });
+    };
+
+    handleCodeElements('pre.notranslate > code.notranslate');
+    handleCodeElements('div.highlight > pre.notranslate');
+
+    let currentFeedback = null;
+    document.querySelectorAll('clipboard-copy').forEach(copyButton => {
+        copyButton.addEventListener('click', () => {
+            const codeContent = copyButton.closest('.snippet-clipboard-content').innerText;
+            const tempTextArea = document.createElement('textarea');
+            tempTextArea.value = codeContent;
+            document.body.appendChild(tempTextArea);
+            tempTextArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempTextArea);
+
+            const copyIcon = copyButton.querySelector('.octicon-copy');
+            const checkIcon = copyButton.querySelector('.octicon-check');
+            const copyFeedback = copyButton.nextElementSibling;
+
+            if (currentFeedback && currentFeedback !== copyFeedback) {currentFeedback.style.display = 'none';}
+            currentFeedback = copyFeedback;
+
+            copyIcon.classList.add('d-none');
+            checkIcon.classList.remove('d-none');
+            copyFeedback.style.display = 'block';
+            copyButton.style.borderColor = 'var(--color-success-fg)';
+
+            setTimeout(() => {
+                copyIcon.classList.remove('d-none');
+                checkIcon.classList.add('d-none');
+                copyFeedback.style.display = 'none';
+                copyButton.style.borderColor = '';
+            }, 2000);
+        });
+    });
+});
+
+</script>
+
+
+</html>
